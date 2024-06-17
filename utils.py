@@ -18,7 +18,7 @@ def load_dataset(dataset, path='./data'):
     if dataset in ('MUTAG', 'NCI1', 'ENZYMES', 'NCI109', 'PROTEINS', 'PTC_MR'):
         graphs, labels = parse_dataset(dataset)
         labels = labels.astype(int)
-        graphs = [nx.from_scipy_sparse_matrix(g) for g in graphs]
+        graphs = [nx.from_scipy_sparse_array(g) for g in graphs]
     else:
         graphs, labels = _load_data(dataset)
     return graphs, labels
@@ -38,11 +38,11 @@ def parse_dataset(DS):
     dir_ = './data/bio'
     prefix = dir_ + '/' + DS + '/' + DS
     A = prefix + '_A.txt'
-    offsets = np.loadtxt(prefix +'_graph_indicator.txt', dtype=np.int, delimiter=',') - 1
+    offsets = np.loadtxt(prefix +'_graph_indicator.txt', dtype=np.int32, delimiter=',') - 1
     offs = np.append([0], np.append(np.where((offsets[1:] - offsets[:-1])>0)[0]+1, len(offsets)))
     labels = np.loadtxt(prefix+'_graph_labels.txt', dtype=np.float64).reshape(-1)
-    A_data = np.loadtxt(prefix+'_A.txt', dtype=np.int, delimiter=',') - 1
-    A_mat = sp.csr_matrix((np.ones(A_data.shape[0]), (A_data[:, 0], A_data[:, 1])), dtype=np.int)
+    A_data = np.loadtxt(prefix+'_A.txt', dtype=np.int32, delimiter=',') - 1
+    A_mat = sp.csr_matrix((np.ones(A_data.shape[0]), (A_data[:, 0], A_data[:, 1])), dtype=np.int32)
 
     As = []
     for i in range(1, len(offs)):
@@ -116,6 +116,21 @@ def spectral_moment_approx(G, order=10):
     return moments
 
 
+def run_grid_search(X, Y, n_fold=10, random_state=42, **kwargs):
+    # Grid Search
+    kfold = StratifiedKFold(n_splits=n_fold, shuffle=True, random_state=random_state)
+    # kfold = KFold(n_splits=n_fold, shuffle=True, random_state=random_state)
+    param_grid = [
+          {'C': np.logspace(-3, 2, 6), 'kernel': ['linear']},
+          {'C': np.logspace(-3, 2, 6), 'gamma': list(np.logspace(-3, 2, 6)) + ['auto'], 'kernel': ['rbf']},
+    ]
+    gscv = GridSearchCV(estimator=SVC(), param_grid=param_grid, scoring='accuracy', cv=kfold)
+    gscv.fit(X, Y)
+    print(gscv.best_params_)
+    print(gscv.best_score_)
+    return gscv.best_score_
+
+
 def search_and_test(X, Y, n_fold=10, random_state=42):
     X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.1, random_state=random_state)
     param_grid = [
@@ -124,6 +139,8 @@ def search_and_test(X, Y, n_fold=10, random_state=42):
     ]
     clf = GridSearchCV(SVC(), param_grid, cv=n_fold, scoring='accuracy', n_jobs=-1)
     clf.fit(X_train, y_train)
+    # y_true, y_pred = y_test, clf.predict(X_test)
+    # print(classification_report(y_true, y_pred))
     best_params_ = clf.best_params_
     # print(best_params_)
     if best_params_['kernel'] == 'linear':
@@ -135,4 +152,3 @@ def search_and_test(X, Y, n_fold=10, random_state=42):
     cvs = cross_val_score(clf, X, Y, n_jobs=-1, cv=k_fold)
     acc = cvs.mean()
     return acc
-
